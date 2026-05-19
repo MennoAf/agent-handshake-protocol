@@ -12,6 +12,8 @@ from datetime import UTC, datetime
 from typing import Literal
 
 import pytest
+from pydantic import ValidationError
+
 from agent_handshake_protocol import (
     CommitIntent,
     CommitResult,
@@ -25,7 +27,6 @@ from agent_handshake_protocol import (
     register_interchange_block,
     resolve_interchange_blocks,
 )
-from pydantic import ValidationError
 
 
 @pytest.fixture(autouse=True)
@@ -173,6 +174,36 @@ class TestInboundDigest:
                 files_changed=[],
                 summary="x" * 1001,
             )
+
+
+class TestConsumerFallbackContract:
+    """Document the protocol's contract with consumers around unknown enum values.
+
+    Per docs/COMPATIBILITY.md: this package raises ValueError on unknown enum
+    values (the strict-at-the-boundary stance). Consumers are expected to
+    wrap construction in try/except and default-fall-back. This test
+    pins that contract in code so consumers can rely on it.
+    """
+
+    def test_unknown_peer_tier_string_raises_for_consumers_to_handle(self):
+        with pytest.raises(ValueError):
+            SoWPeerTier("delegate")
+
+    def test_unknown_rejection_reason_string_raises_for_consumers_to_handle(self):
+        with pytest.raises(ValueError):
+            RejectionReason("BIKESHED_VIOLATION")
+
+    def test_unknown_digest_confidence_string_raises_for_consumers_to_handle(self):
+        with pytest.raises(ValueError):
+            DigestConfidence("VIBES")
+
+
+class TestVersionExport:
+    def test_version_is_a_string(self):
+        from agent_handshake_protocol import __version__
+
+        assert isinstance(__version__, str)
+        assert __version__  # non-empty
 
 
 class TestResolveInterchangeBlocks:
