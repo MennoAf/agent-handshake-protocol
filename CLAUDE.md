@@ -4,8 +4,8 @@
 
 - **Loom project:** `agent-handshake-protocol` (id `47836951-70c9-4ad9-a3f7-88aeefebc69b`)
 - **Loom agent name:** `handshake_protocol` (registered as worker)
-- Working-dir auto-resolves to this project — `loom_status()` / `loom_inbox()` will scope here without an explicit `project_id`.
-- If a session lands in `loom-loop` instead, the working-dir attribute on the project record is missing or wrong; fix the project record, don't override per-call.
+- The global Loom MCP server is pinned at startup to `loom-loop` (its `app.project_id` is process-global; `loom_switch_project` mutates the shared context and would affect every other session). Until session-bound project scoping lands in Loom, **always pass `project_id="47836951-70c9-4ad9-a3f7-88aeefebc69b"` explicitly** on `loom_status`, `loom_inbox`, `loom_create`, etc. when working in this repo. Do **not** call `loom_switch_project` — it has global side effects.
+- Tracked enhancement: feature request sent to `warp` in `loom-loop` to add per-session project binding so cwd→project resolution works as originally intended.
 
 ## What this repo is
 
