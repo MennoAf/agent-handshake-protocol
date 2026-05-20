@@ -8,6 +8,7 @@ DoctrineLedgerEntry) live with their owning framework.
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -28,14 +29,21 @@ from agent_handshake_protocol import (
     resolve_interchange_blocks,
 )
 
+# The mutable registry that ``register_interchange_block`` writes to.
+# Public ``InterchangeBlockRegistry`` is a read-only ``MappingProxyType``
+# view; tests that need to clear/restore state must work against the
+# underlying dict. This import is the only sanctioned mutation path
+# outside the decorator itself.
+from agent_handshake_protocol.contracts import _REGISTRY
+
 
 @pytest.fixture(autouse=True)
 def _isolate_registry():
     """Snapshot the registry around each test so test-registered blocks don't leak."""
-    snapshot = dict(InterchangeBlockRegistry)
+    snapshot = dict(_REGISTRY)
     yield
-    InterchangeBlockRegistry.clear()
-    InterchangeBlockRegistry.update(snapshot)
+    _REGISTRY.clear()
+    _REGISTRY.update(snapshot)
 
 
 class TestEnumWireFormat:
@@ -115,9 +123,16 @@ class TestCommitIntent:
                 scope_assertion="ok",
             )
 
-    def test_extra_fields_forbidden(self):
-        with pytest.raises(ValidationError):
-            CommitIntent.model_validate(
+    def test_extra_fields_logged_and_dropped(self, caplog):
+        """Receive-policy: unknown fields are WARN-logged and dropped, not rejected.
+
+        Forward-compat posture (Postel): older consumers should tolerate newer
+        peers adding fields without crashing. Pydantic ``extra="ignore"`` does
+        the drop; the model_validator(mode="before") emits the WARNING so the
+        drift is observable (no silent loss).
+        """
+        with caplog.at_level(logging.WARNING, logger="agent_handshake_protocol.contracts"):
+            block = CommitIntent.model_validate(
                 {
                     "type": "commit-intent",
                     "intent": "x",
@@ -125,8 +140,15 @@ class TestCommitIntent:
                     "claim_id": "c1",
                     "scope_assertion": "ok",
                     "unexpected": "kaboom",
+                    "another_extra": 42,
                 }
             )
+        assert block.intent == "x"
+        assert not hasattr(block, "unexpected")
+        assert not hasattr(block, "another_extra")
+        assert "Dropping unknown fields on CommitIntent" in caplog.text
+        assert "unexpected" in caplog.text
+        assert "another_extra" in caplog.text
 
 
 class TestCommitResult:
@@ -242,3 +264,105 @@ class TestResolveInterchangeBlocks:
     def test_non_list_passes_through(self):
         assert resolve_interchange_blocks("not a list") == "not a list"
         assert resolve_interchange_blocks(None) is None
+
+    def test_non_dict_item_raises_type_error_with_index(self):
+        """Strict contract: non-dict, non-InterchangeBlock items are a caller bug."""
+        valid = {
+            "type": "commit-intent",
+            "intent": "x",
+            "files_changed": ["a.py"],
+            "claim_id": "c1",
+            "scope_assertion": "ok",
+        }
+        with pytest.raises(TypeError, match="index 1"):
+            resolve_interchange_blocks([valid, "not a dict", valid])
+        with pytest.raises(TypeError, match="index 0"):
+            resolve_interchange_blocks([42, valid])
+
+
+class TestAbstractBase:
+    """Direct instantiation of InterchangeBlock is rejected (abstract-base posture)."""
+
+    def test_direct_construction_raises(self):
+        with pytest.raises(ValueError, match="abstract"):
+            InterchangeBlock(type="commit-intent")
+
+    def test_direct_model_validate_raises(self):
+        with pytest.raises(ValueError, match="abstract"):
+            InterchangeBlock.model_validate({"type": "commit-intent"})
+
+    def test_concrete_subclass_still_constructs(self):
+        # Subclasses bypass the guard because type(self) is not InterchangeBlock.
+        block = CommitIntent(
+            intent="x",
+            files_changed=["a.py"],
+            claim_id="c1",
+            scope_assertion="ok",
+        )
+        assert isinstance(block, InterchangeBlock)
+        assert isinstance(block, CommitIntent)
+
+    def test_subclass_without_type_default_raises_at_class_definition(self):
+        """__init_subclass__ rejects a subclass that forgets to declare a type default."""
+        with pytest.raises(TypeError, match="must declare `type`"):
+
+            class _ForgotToOverride(InterchangeBlock):
+                pass
+
+    def test_subclass_with_empty_type_default_raises_at_class_definition(self):
+        with pytest.raises(TypeError, match="must declare `type`"):
+
+            class _EmptyType(InterchangeBlock):
+                type: Literal[""] = ""
+
+
+class TestRegistryImmutability:
+    """The public InterchangeBlockRegistry view rejects mutation."""
+
+    def test_setitem_raises_type_error(self):
+        with pytest.raises(TypeError):
+            InterchangeBlockRegistry["sneaky"] = CommitIntent  # type: ignore[index]
+
+    def test_delitem_raises_type_error(self):
+        with pytest.raises(TypeError):
+            del InterchangeBlockRegistry["commit-intent"]  # type: ignore[attr-defined]
+
+    def test_reads_still_work(self):
+        # Read-only does not mean opaque — introspection paths are first-class.
+        assert "commit-intent" in InterchangeBlockRegistry
+        assert InterchangeBlockRegistry["commit-intent"] is CommitIntent
+        assert set(InterchangeBlockRegistry.keys()) >= {
+            "commit-intent",
+            "commit-result",
+            "inbound-digest",
+        }
+
+
+class TestSchemaVersionBounds:
+    """schema_version is bounded to a sane positive range."""
+
+    def _intent_kwargs(self, **overrides):
+        base = dict(
+            intent="x",
+            files_changed=["a.py"],
+            claim_id="c1",
+            scope_assertion="ok",
+        )
+        base.update(overrides)
+        return base
+
+    def test_schema_version_zero_rejected(self):
+        with pytest.raises(ValidationError):
+            CommitIntent(**self._intent_kwargs(schema_version=0))
+
+    def test_schema_version_above_max_rejected(self):
+        with pytest.raises(ValidationError):
+            CommitIntent(**self._intent_kwargs(schema_version=70000))
+
+    def test_schema_version_at_floor_accepted(self):
+        block = CommitIntent(**self._intent_kwargs(schema_version=1))
+        assert block.schema_version == 1
+
+    def test_schema_version_at_ceiling_accepted(self):
+        block = CommitIntent(**self._intent_kwargs(schema_version=65535))
+        assert block.schema_version == 65535

@@ -13,6 +13,12 @@ dependencies = [
     "pydantic>=2.7",
 ]
 
+[project.urls]
+Homepage = "https://github.com/MennoAf/agent-handshake-protocol"
+Repository = "https://github.com/MennoAf/agent-handshake-protocol"
+Issues = "https://github.com/MennoAf/agent-handshake-protocol/issues"
+Changelog = "https://github.com/MennoAf/agent-handshake-protocol/blob/main/CHANGELOG.md"
+
 [dependency-groups]
 dev = [
     "pytest>=8.0",

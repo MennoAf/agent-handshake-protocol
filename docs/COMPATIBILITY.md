@@ -60,6 +60,66 @@ Reasons consumers see an unknown value at runtime:
 
 In every case, conservative default + operator-visible signal (log, warning, or `TIER_MISMATCH`-style annotation) is preferred over hard failure.
 
+## Postel posture: receive liberal, send conservative
+
+The protocol's wire boundary follows the robustness principle on both sides — and the asymmetry matters.
+
+### Receive (be liberal)
+
+`InterchangeBlock` is configured with `extra="ignore"`. Unknown fields on inbound blocks are **dropped, not rejected**. This lets a newer peer extend a block type (e.g. add `audit_token` to `CommitIntent`) without breaking an older consumer that doesn't yet know about the new field. The older consumer simply ignores what it can't interpret and processes the fields it does know.
+
+Silent drops would be the failure mode here, so every drop is observable: a `model_validator(mode="before")` on `InterchangeBlock` emits a `WARNING` to the `agent_handshake_protocol.contracts` logger naming the model and the dropped field names. Consumers configure their logging stack however they want — file, stdout, structured JSON, error tracker. The point is that schema drift between peers does not vanish without a trace.
+
+If a consumer wants strict rejection instead of tolerant ignore (e.g. for a security-sensitive boundary where unknown keys should hard-fail), they can subclass the relevant block and set `model_config = ConfigDict(extra="forbid")` on the subclass. The protocol itself does not impose strict mode by default.
+
+### Send (be conservative)
+
+The wrap serializer on `InterchangeBlock` iterates `type(self).model_fields` — the **declared** field set of the concrete subclass — when building the output dict. Undeclared instance attributes (anything a subclass might stash via `__setattr__` or via a `ConfigDict(extra="allow")` override) cannot leak onto the wire by construction. The send side emits exactly what the subclass's Pydantic schema declared, no more.
+
+This asymmetry is intentional: if peers also-be-liberal on send, schema drift compounds across hops. If peers be-conservative-on-send, the wire format stays clean even when the codebase gets messy.
+
+## Abstract base — extension contract
+
+`InterchangeBlock` is an **abstract base**. Direct instantiation is rejected at runtime:
+
+```python
+InterchangeBlock(type="commit-intent")          # raises ValueError
+InterchangeBlock.model_validate({"type": "x"})  # raises ValueError
+```
+
+Use a concrete subclass, or define your own. The required pattern for a new block type:
+
+```python
+from typing import Literal
+from agent_handshake_protocol import InterchangeBlock, register_interchange_block
+
+@register_interchange_block
+class MyBlock(InterchangeBlock):
+    type: Literal["my-block"] = "my-block"
+    payload: str
+    severity: int
+```
+
+A subclass that omits a non-empty Literal default on `type` is rejected at class-definition time (`TypeError` from `__init_subclass__`). This catches the common "I forgot to declare the type string" mistake before the class can ever be instantiated or registered. See [`examples/custom_block.py`](../examples/custom_block.py) for the worked example.
+
+Third-party adopters are first-class extenders — the protocol expects subclasses outside the Diplomat vocabulary. The substrate is designed to carry them. See [`README.md`](../README.md) "Substrate vs vocabulary" for the framing.
+
+## Firewall doctrine — cross-install context
+
+A common failure mode when two agent installs work on the same repository is **context bleed**: peer A's free-form handoff prose (a Weft handoff, a session note, a planning doc) gets ingested by peer B's agent, which then can't distinguish "things peer A wants me to act on" from "things peer A wrote for their own agent's context." Confused scope is the symptom; conflated trust boundaries is the cause.
+
+The protocol's design prevents this at the wire layer. Agents do **not** read peer-side prose directly. They read structured `InterchangeBlock` instances — specifically `InboundDigest` for peer-state summaries — that have already been classified by the Diplomat agent on the peer's side:
+
+- `InboundDigest.confidence` (`CLEAN` / `FLAGGED_UNTRUSTED` / `SUSPICIOUS` / `NO_OP`) — trust classification of the source content.
+- `InboundDigest.operator_action_required: bool` — explicit "this needs action" vs "FYI only" signal.
+- `InboundDigest.summary` (max 1000 chars) — the classified, bounded summary that the consuming agent reads **instead of** the raw peer-side prose.
+
+The contract is: raw `.handshake/v0/` artifacts and raw peer-side handoff prose are read **only** by Diplomat. The consuming agent sees only the structured digest. This package provides the vocabulary to express the result of that classification (the `InboundDigest` block, the `DigestConfidence` enum, the action-required bool). The classification logic itself lives in the Diplomat agent (Mentarchy V1 / agent_builder v0), not in this package.
+
+**Practical consequence:** if your agent appears to "get confused by another agent's context," the bug is on the Diplomat side, not the protocol side. Either Diplomat isn't running between the two installs, or it is running but the classification pipeline isn't producing the right digest. The protocol guarantees the boundary has a clean vocabulary; it does not guarantee that consumers route inbound peer prose through it.
+
+A future protocol version may extend the vocabulary to carry finer granularity ("here are 3 things to do + 2 FYIs"). That is a V2 candidate; the V1 contract is single-bool + single-summary.
+
 ## Schema-version field on `InterchangeBlock`
 
 Every `InterchangeBlock` carries a `schema_version: int = 1` field. This is reserved for future use — V1 sets it to `1` and no consumer should branch on it yet. When the protocol introduces breaking changes within a block type, `schema_version` will increment, and consumers will be expected to dispatch on it. Until then, treat it as a constant.

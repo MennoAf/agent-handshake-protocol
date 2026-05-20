@@ -21,16 +21,19 @@ from agent_handshake_protocol import (
     resolve_interchange_blocks,
 )
 
+# Mutable registry — see comment in tests/test_contracts.py for the rationale.
+from agent_handshake_protocol.contracts import _REGISTRY
+
 EXAMPLE_PATH = Path(__file__).parent.parent / "examples" / "custom_block.py"
 EXAMPLE_MODULE_NAME = "_custom_block_under_test"
 
 
 @pytest.fixture(autouse=True)
 def _isolate_registry() -> Iterator[None]:
-    snapshot = dict(InterchangeBlockRegistry)
+    snapshot = dict(_REGISTRY)
     yield
-    InterchangeBlockRegistry.clear()
-    InterchangeBlockRegistry.update(snapshot)
+    _REGISTRY.clear()
+    _REGISTRY.update(snapshot)
     sys.modules.pop(EXAMPLE_MODULE_NAME, None)
 
 
