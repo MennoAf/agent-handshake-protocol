@@ -2,7 +2,7 @@
 
 All notable changes to `agent-handshake-protocol`. The format loosely follows [Keep a Changelog](https://keepachangelog.com/) and the project adheres to [Semantic Versioning](https://semver.org/) with the patch-additivity guarantees documented in [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md).
 
-## [Unreleased]
+## [0.2.0] — 2026-05-19
 
 ### Changed (breaking on receive semantics, additive on wire)
 
