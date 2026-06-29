@@ -20,6 +20,9 @@ jobs:
         uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
+          # uv.lock is gitignored (library, intentionally unlocked), so cache
+          # off pyproject.toml — the default **/uv.lock glob hard-errors here.
+          cache-dependency-glob: "pyproject.toml"
 
       - name: Set up Python ${{ matrix.python-version }}
         run: uv python install ${{ matrix.python-version }}
