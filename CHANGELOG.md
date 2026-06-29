@@ -2,6 +2,20 @@
 
 All notable changes to `agent-handshake-protocol`. The format loosely follows [Keep a Changelog](https://keepachangelog.com/) and the project adheres to [Semantic Versioning](https://semver.org/) with the patch-additivity guarantees documented in [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md).
 
+## [0.4.0] — 2026-06-29
+
+### Added
+
+- **`capabilities` module — the SoW capability + protocol-version negotiation vocabulary.** `Capability` (a `StrEnum`: `commit-interchange`, `inbound-digest`, `ephemeral-scope`, `tier-negotiation`, `capability-negotiation`), the `PROTOCOL_VERSION` contract constant (`"0.4.0"`), and the leak-free `parse_capabilities(raw) -> list[Capability]` coercion, all re-exported from the package root. This is the single source of truth — the same anti-drift doctrine as `secret_floor` — so the v0 handshake skill/CLI and the v1 Diplomat agent can never disagree on what a capability string means. It adds the *capability* axis parallel to the existing per-identity `peer_tier` *trust* axis: each party announces what it can DO and which protocol version it speaks, keyed by identity in the SoW.
+- Capability values are kebab-case and, where one corresponds to an `InterchangeBlock`, match that block's `type` string (`inbound-digest`). Capability names are part of the contract once shipped — **additive only, never rename** (the same rule the secret-floor pattern names follow).
+
+### Compatibility notes (2026-06-29)
+
+- **Advisory, not gating.** This release adds the negotiation *substrate* only: parties declare and read `capabilities` / `protocol_version`, but no code branches on them yet. Gating a behaviour on a declared capability is a deliberate follow-on, so nothing depends on the new fields before they are observed in the wild.
+- **Wire format unchanged.** The `InterchangeBlock` vocabulary and all existing enum values are untouched. v0.2.0 / v0.3.0 / v0.4.0 peers remain interoperable on the wire. The new fields live in the SoW document (a YAML negotiation artifact), not in any interchange block.
+- **Receive posture.** `parse_capabilities` is liberal on receive (Postel): an unknown capability string — a newer peer announcing a feature this build doesn't model — is dropped and logged at WARNING, never retained and never raised. Malformed input (non-list, non-string entries) is treated as "nothing announced" with a warning rather than an exception, so a malformed peer artifact can't take a consumer down.
+- **SoW content-hash backward compatibility is a producer-side concern.** The negotiation fields must be omitted from a SoW's signed content-hash when empty so that existing signed SoWs do not silently go stale on upgrade; that is enforced in the `agent-builder` SoW serializer, not here.
+
 ## [0.3.0] — 2026-06-29
 
 ### Added

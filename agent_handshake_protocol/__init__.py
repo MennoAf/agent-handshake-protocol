@@ -3,6 +3,11 @@
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 
+from agent_handshake_protocol.capabilities import (
+    PROTOCOL_VERSION,
+    Capability,
+    parse_capabilities,
+)
 from agent_handshake_protocol.contracts import (
     CommitIntent,
     CommitResult,
@@ -29,6 +34,9 @@ except PackageNotFoundError:
 
 __all__ = [
     "__version__",
+    "PROTOCOL_VERSION",
+    "Capability",
+    "parse_capabilities",
     "CommitIntent",
     "CommitResult",
     "CommitVerdict",
