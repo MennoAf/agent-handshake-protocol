@@ -16,6 +16,11 @@ from agent_handshake_protocol.contracts import (
     register_interchange_block,
     resolve_interchange_blocks,
 )
+from agent_handshake_protocol.secret_floor import (
+    SECRET_FLOOR_PATTERNS,
+    contains_secret,
+    scan_text,
+)
 
 try:
     __version__: str = _pkg_version("agent-handshake-protocol")
@@ -33,6 +38,9 @@ __all__ = [
     "InterchangeBlockRegistry",
     "RejectionReason",
     "SoWPeerTier",
+    "SECRET_FLOOR_PATTERNS",
+    "contains_secret",
     "register_interchange_block",
     "resolve_interchange_blocks",
+    "scan_text",
 ]

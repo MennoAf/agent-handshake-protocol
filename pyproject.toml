@@ -1,6 +1,6 @@
 [project]
 name = "agent-handshake-protocol"
-version = "0.2.0"
+version = "0.3.0"
 description = "Portable wire-protocol types for the agent-handshake / Diplomat ecosystem. Pydantic models for InterchangeBlock + the Diplomat commit/digest vocabulary, with no framework coupling."
 requires-python = ">=3.12"
 readme = "README.md"

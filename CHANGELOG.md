@@ -2,6 +2,16 @@
 
 All notable changes to `agent-handshake-protocol`. The format loosely follows [Keep a Changelog](https://keepachangelog.com/) and the project adheres to [Semantic Versioning](https://semver.org/) with the patch-additivity guarantees documented in [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md).
 
+## [0.3.0] — 2026-06-29
+
+### Added
+
+- **`secret_floor` module — the canonical hardcoded secret-scan floor.** `SECRET_FLOOR_PATTERNS` (name → compiled regex) plus the leak-safe helpers `scan_text(text) -> list[str]` (pattern names only, never matched content) and `contains_secret(text) -> bool`, all re-exported from the package root. This is now the single source of truth that both the v0 handshake skill/CLI and the v1 Diplomat agent import, so the floor can no longer drift between tiers. The pattern set is the **union** of the historical v0 (`diplomat/SKILL.md`) and v1 (Methodist) floors: it adds the generic-credential catch-all and a PGP-/PKCS#8-capable private-key pattern that the v1 code lacked, and the AWS-secret-key, `ghs_` and OpenAI-legacy patterns the v0 docs lacked. The `sk-` family uses precise key shapes rather than a broad `sk-…{32,}` catch-all to avoid false positives. Pattern names are part of the contract (they surface in `CommitResult.rejection_detail` and Methodist violation details) — additive only, never rename.
+
+### Audit notes (2026-06-29)
+
+- **Wire format unchanged.** This release only adds a module; the `InterchangeBlock` vocabulary and all enum values are untouched. v0.2.0 and v0.3.0 peers remain interoperable on the wire. Consumers gain the shared floor by importing `secret_floor`; nothing on the existing surface changes.
+
 ## [0.2.0] — 2026-05-19
 
 ### Changed (breaking on receive semantics, additive on wire)
